@@ -384,22 +384,22 @@ function DDdata = getDDdata()
     Solitary    = addFileNames(Solitary, false, 'DD');
 
 %% Attach Locomotor .AWD file names
-    Solitary.s1.file_awd = "DD_Locomotor/S1.awd";
-    Solitary.s2.file_awd = "DD_Locomotor/S2.awd";
-    Solitary.s3.file_awd = "DD_Locomotor/S3.awd";
-    Solitary.s4.file_awd = "DD_Locomotor/S4.awd";
-    Paired.p1l.file_awd  = "DD_Locomotor/P1L.awd";
-    Paired.p1r.file_awd  = "DD_Locomotor/P1R.awd";
-    Paired.p2l.file_awd  = "DD_Locomotor/P2L.awd";
-    Paired.p2r.file_awd  = "DD_Locomotor/P2R.awd";
-    Paired.p3l.file_awd  = "DD_Locomotor/P3L.awd";
-    Paired.p3r.file_awd  = "DD_Locomotor/P3R.awd";
-    Paired.p4l.file_awd  = "DD_Locomotor/P4L.awd";
-    Paired.p4r.file_awd  = "DD_Locomotor/P4R.awd";
-    Removal.r1.file_awd  = "DD_Locomotor/R1.awd";
-    Removal.r2.file_awd  = "DD_Locomotor/R2.awd";
-    Removal.r3.file_awd  = "DD_Locomotor/R3.awd";
-    Removal.r4.file_awd  = "DD_Locomotor/R4.awd";
+    Solitary.s1.file_awd = "DD_Locomotor/Solitary1.awd";
+    Solitary.s2.file_awd = "DD_Locomotor/Solitary2.awd";
+    Solitary.s3.file_awd = "DD_Locomotor/Solitary3.awd";
+    Solitary.s4.file_awd = "DD_Locomotor/Solitary4.awd";
+    Paired.p1l.file_awd  = "DD_Locomotor/Paired1Left.awd";
+    Paired.p1r.file_awd  = "DD_Locomotor/Paired1Right.awd";
+    Paired.p2l.file_awd  = "DD_Locomotor/Paired2Left.awd";
+    Paired.p2r.file_awd  = "DD_Locomotor/Paired2Right.awd";
+    Paired.p3l.file_awd  = "DD_Locomotor/Paired3Left.awd";
+    Paired.p3r.file_awd  = "DD_Locomotor/Paired3Right.awd";
+    Paired.p4l.file_awd  = "DD_Locomotor/Paired4Left.awd";
+    Paired.p4r.file_awd  = "DD_Locomotor/Paired4Right.awd";
+    Removal.r1.file_awd  = "DD_Locomotor/Removal1.awd";
+    Removal.r2.file_awd  = "DD_Locomotor/Removal2.awd";
+    Removal.r3.file_awd  = "DD_Locomotor/Removal3.awd";
+    Removal.r4.file_awd  = "DD_Locomotor/Removal4.awd";
     
 %% Create nested DD data struct
     DDdata = struct();
