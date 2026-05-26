@@ -94,20 +94,25 @@ File naming follows the same convention as the corresponding `_location` folders
 
 ---
 
-## `*_Quantified`
+## `*_quantified`
 
-Contains quantified social interaction data stored as `.csv` files.
-Data represent time spent in the interaction location quantified as seconds per 6-minute bins.
+Contains quantified social interaction/seeking data stored as `.csv` files.
 
-Individual animal files follow the same naming convention as the `_location` folders.
+Social interaction/seeking data represent the time spent in the interaction location, quantified as seconds per 6-minute bin.
 
-Additionally, paired interaction data are included as:
+For the `LD` condition folders, quantified locomotor activity data are additionally included for easier analysis. These data are equivalent to the corresponding `.awd` locomotor files, but reformatted into `.csv` table format.
+
+File naming conventions:
+- `##_soc.csv` — quantified social interaction/seeking data
+- `##_loc.csv` — quantified locomotor activity data
+
+Where `##` represents the experimental animal/group identifier:
 
 ```text
-Pair1.csv
-Pair2.csv
-Pair3.csv
-Pair4.csv
+p1l/p1r - p4l/p4r : left/right animals from the 4 paired dyads
+r1-r4               : the 4 partner-removed animals
+s1-s4               : the 4 naïve solitary animals
+p1-p4               : dyadic interaction data for the 4 paired groups
 ```
 
 
