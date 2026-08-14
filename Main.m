@@ -1,207 +1,159 @@
 %% Call Data
 [LD, DD] = getData();
 
-%% LD Result 1 -- diurnality analysis of interaction using paired t-test
-% Individual visit count and duration
-[~, p, ~, tstat] = ttest(LD.Paired_means.count_day, LD.Paired_means.count_night)
-[~, p, ~, tstat] = ttest(LD.Paired_means.duration_day, LD.Paired_means.duration_night)
+%% Result 1 (Social Context): Daily occupancy across social x lighting with LME
 
-% Interaction count and duration
-[~, p, ~, stats] = ttest(LD.Interaction_means.count_day, LD.Interaction_means.count_night)
+% Construct lme table for Daily Entries Count
+LD_tbl_entries = getLmeTable(LD, {'Paired', 'Removal', 'Solitary'}, ...
+    'entries', 'Lighting', 'LD');
+DD_tbl_entries = getLmeTable(DD, {'Paired', 'Removal', 'Solitary'}, ...
+    'entries', 'Lighting', 'DD');
+
+entries_tbl = [LD_tbl_entries; DD_tbl_entries];
+% Construct lme table for Daily Occupancy Duration
+LD_tbl_duration = getLmeTable(LD, {'Paired', 'Removal', 'Solitary'}, ...
+    'duration', 'Lighting', 'LD');
+DD_tbl_duration = getLmeTable(DD, {'Paired', 'Removal', 'Solitary'}, ...
+    'duration', 'Lighting', 'DD');
+duration_tbl = [LD_tbl_duration; DD_tbl_duration];
+
+% Centering age with subject-level mean
+mouse_tbl = unique(entries_tbl(:, {'MouseID','Age'}));
+meanAge = mean(mouse_tbl.Age);
+entries_tbl.Age_c = entries_tbl.Age - meanAge;
+duration_tbl.Age_c = duration_tbl.Age - meanAge;
+
+% ----- Construct NULL MODELs ------
+null_entries = fitlme(entries_tbl, 'DV ~ 1 + (1|MouseID)');
+null_duration = fitlme(duration_tbl, 'DV ~ 1 + (1|MouseID)');
+
+% ----- Construct FULL(GLOBAL) MODELs ------
+full_entries_additive = fitlme(entries_tbl, ...
+    'DV ~ Social + Lighting + Age_c + Day_c + (1|MouseID)');
+full_entries_interaction = fitlme(entries_tbl, ...
+    'DV ~ Social * Lighting + Age_c + Day_c + (1|MouseID)');
+full_duration_additive = fitlme(duration_tbl, ...
+    'DV ~ Social + Lighting + Age_c + Day_c + (1|MouseID)');
+full_duration_interaction = fitlme(duration_tbl, ...
+    'DV ~ Social * Lighting + Age_c + Day_c + (1|MouseID)');
+
+full_entries_additive_reml = fitlme(entries_tbl, ...
+    'DV ~ Social + Lighting + Age_c + Day_c + (1|MouseID)', 'FitMethod','REML');
+full_entries_interaction_reml = fitlme(entries_tbl, ...
+    'DV ~ Social * Lighting + Age_c + Day_c + (1|MouseID)', 'FitMethod','REML');
+full_duration_additive_reml = fitlme(duration_tbl, ...
+    'DV ~ Social + Lighting + Age_c + Day_c + (1|MouseID)', 'FitMethod','REML');
+full_duration_interaction_reml = fitlme(duration_tbl, ...
+    'DV ~ Social * Lighting + Age_c + Day_c + (1|MouseID)', 'FitMethod','REML');
+
+
+% ----- Compare Additive model against Null Model -----
+compare(null_entries, full_entries_additive)
+compare(null_duration, full_duration_additive)
+
+% ----- Compare Interaction model against Additive model -----
+compare(full_entries_additive, full_entries_interaction)
+compare(full_duration_additive, full_duration_interaction)
+
+% ANOVA results
+anova(full_entries_additive)
+anova(full_duration_additive)
+
+% Calculate ICC of random effect
+[psi_entries, mse_entries] = covarianceParameters(full_entries_additive);
+icc_entries = psi_entries{1}/(psi_entries{1} + mse_entries);
+
+[psi_dur, mse_dur] = covarianceParameters(full_duration_additive);
+icc_duration = psi_dur{1}/(psi_dur{1} + mse_dur);
+%% Result 1 (Social Context): Pairwise Comparisions of global LME
+% Simple contrasts between social context using the retained additive model
+full_tbls = {entries_tbl, duration_tbl};
+
+comparisons = {
+    'Paired  vs  Solitary';
+    'Paired  vs  Removal';
+    'Removal vs  Solitary'
+};
+
+for i = 1:numel(full_tbls)
+    % Comparison 1: Paired vs. Solitary (8 vs. 4 mice)
+    full_tbl = full_tbls{i};
+    if i == 2
+        full_tbl.DV = full_tbl.DV/60/60; % convert to hour
+    end
+    idx = ismember(full_tbl.Social, {'paired','solitary'});
+    tbl_PvS = full_tbl(idx,:);
+    tbl_PvS.Social = removecats(tbl_PvS.Social);
+    mdl_PvS = fitlme(tbl_PvS,...
+        'DV ~ Social + Lighting + Age_c + Day_c + (1|MouseID)');
+    ans_PvS = anova(mdl_PvS);
+    d_PvS = 2*mdl_PvS.Coefficients.tStat(2)/sqrt(mdl_PvS.DFE);
+% Comparison 2: Paired vs. Partner-Removed (4 vs. 4 mice, repeated measure)
+    remainingMice = unique(full_tbl.MouseID(full_tbl.Social=="removal"));
+    idx = ismember(full_tbl.MouseID,remainingMice) & ...
+          ismember(full_tbl.Social,{'paired','removal'});
+    tbl_PvR = full_tbl(idx,:);
+    tbl_PvR.Social = removecats(tbl_PvR.Social);
+    mdl_PvR = fitlme(tbl_PvR,...
+        'DV ~ Social + Lighting + Age_c + Day_c + (1|MouseID)');
+    ans_PvR = anova(mdl_PvR);
+    d_PvR = 2*mdl_PvR.Coefficients.tStat(2)/sqrt(mdl_PvR.DFE);
+% Comparison 3: Partner-Removed vs. Solitary (4 vs. 4 mice)
+    idx = ismember(full_tbl.Social,{'removal','solitary'});
+    tbl_RvS = full_tbl(idx,:);
+    tbl_RvS.Social = removecats(tbl_RvS.Social);
+    mdl_RvS = fitlme(tbl_RvS,...
+        'DV ~ Social + Lighting + Age_c + Day_c + (1|MouseID)');
+    ans_RvS = anova(mdl_RvS);
+    d_RvS = 2*mdl_RvS.Coefficients.tStat(2)/sqrt(mdl_RvS.DFE);
+
+    ans_all = [ans_PvS(2, :);
+        ans_PvR(2, :);
+        ans_RvS(2, :)]; % extract Social row
+    ans_all.Term = comparisons;
+    cohend = [d_PvS; d_PvR; d_RvS];
+    ans_all.CohenD = cohend;
+    ans_all.p_adj = holmBonferroni(ans_all.pValue);
+    disp(ans_all)
+end
+
+%% Result 2 (LD): Day-Night distribution analysis with t-test
+% Paired-group individual occupancy duration: day vs. night
+[~, p, ~, tstat] = ttest(LD.Paired_means.duration_day, LD.Paired_means.duration_night)
+% Interaction duration: day vs. night
 [~, p, ~, stats] = ttest(LD.Interaction_means.duration_day, LD.Interaction_means.duration_night)
 
+% Diurnality index of interaction vs. wheel-running
+interaction_DI = LD.Interaction_means.duration_night./LD.Interaction_means.duration;
+duration_DI = LD.Paired_means.duration_night./LD.Paired_means.duration;
+locomotor_DI = LD.Paired_means.locomotor_night./LD.Paired_means.locomotor;
+duration_DI_pair = mean(reshape(duration_DI, [4 2]), 2);
+locomotor_DI_pair = mean(reshape(locomotor_DI, [4 2]), 2);
+[~, p, ~, stats] = ttest(interaction_DI, locomotor_DI_pair)
+[~, p, ~, stats] = ttest(duration_DI_pair, locomotor_DI_pair)
+
+
+% Pearson correlation between daily interaction duration and locomotion
+% [rp_total, pp_total] = corr(x_total, y_total, 'Type','Pearson', 'Rows','complete')
+
 % Probability of resulting in interaction
-Interaction_day = repmat(LD.Interaction_means.count_day,2,1); 
-Interaction_night = repmat(LD.Interaction_means.count_night,2,1);
-probability_day = Interaction_day(:)./LD.Paired_means.count_day(:);
-probability_night = Interaction_night(:)./LD.Paired_means.count_night(:);
+Interaction_day = repmat(LD.Interaction_means.entries_day,2,1); 
+Interaction_night = repmat(LD.Interaction_means.entries_night,2,1);
+probability_day = Interaction_day(:)./LD.Paired_means.entries_day(:);
+probability_night = Interaction_night(:)./LD.Paired_means.entries_night(:);
 [~, p, ~, stats] = ttest(probability_day, probability_night)
 
 % Average duration per single event
 [~, p, ~, tstat] = ttest(...
-    LD.Paired_means.duration_day./LD.Paired_means.count_day, ...
-    LD.Paired_means.duration_night./LD.Paired_means.count_night)
+    LD.Paired_means.duration_day./LD.Paired_means.entries_day, ...
+    LD.Paired_means.duration_night./LD.Paired_means.entries_night)
 [~, p, ~, tstat] = ttest(...
-    LD.Interaction_means.duration_day./LD.Interaction_means.count_day, ...
-    LD.Interaction_means.duration_night./LD.Interaction_means.count_night)
-%% LD Result 2 -- Social context compare using LME
+    LD.Interaction_means.duration_day./LD.Interaction_means.entries_day, ...
+    LD.Interaction_means.duration_night./LD.Interaction_means.entries_night)
+%% Result 2 (LD): circadian phase analysis with cosinor fitting
 
-variable = 'duration'; % count or duration
-
-tbl = getLmeTable(LD, {'Paired', 'Removal', 'Solitary'}, variable, ...
-    'Lighting', 'LD');
-
-lme_additive = fitlme(tbl, 'DV ~ Context + Day_c + (1|Mouse)');
-lme_interaction = fitlme(tbl, 'DV ~ Context*Day_c + (1|Mouse)');
-compare(lme_additive, lme_interaction)
-
-switch variable
-    case 'count'
-        anova(lme_interaction)
-        lme_interaction.Coefficients
-
-        comparisons = {
-            'Paired vs Removal';
-            'Paired vs Solitary';
-            'Removal vs Solitary'
-        };
-        H = [
-                0  1  0  0  0  0; 
-                0  0  1  0  0  0;
-                0 -1  1  0  0  0 
-            ];
-        [pvals, Fvals] = runContrasts(lme_interaction, H);
-        p_adj = holmBonferroni(pvals);
-        table(comparisons, pvals, p_adj, Fvals)
-
-        % Simple slope 
-        comparisons = {
-            'Paired slope';
-            'Removal slope';
-            'Solitary slope'
-        };
-        H_slopes = [
-            0 0 0 1 0 0;   % Paired slope
-            0 0 0 1 1 0;   % Removal slope
-            0 0 0 1 0 1    % Solitary slope
-        ];
-        [p_slopes, F_slopes] = runContrasts(lme_interaction, H_slopes);
-        beta = fixedEffects(lme_interaction);
-        slope_est = H_slopes * beta;
-        p_adj_slopes = holmBonferroni(p_slopes);
-        table(comparisons, p_slopes, p_adj_slopes, F_slopes)
-
-    case 'duration'
-        compare(lme_additive, lme_interaction)
-        anova(lme_additive)
-        lme_additive.Coefficients
-        comparisons = {
-            'Paired vs Removal';
-            'Paired vs Solitary';
-            'Removal vs Solitary'
-        };
-        H = [
-                0  1  0  0;   % Paired vs Removal
-                0  0  1  0;   % Paired vs Solitary
-                0 -1  1  0    % Removal vs Solitary
-            ];
-        % run pairwise comparisons
-        [pvals, Fvals] = runContrasts(lme_additive, H);
-        p_adj = holmBonferroni(pvals);
-        
-        table(comparisons, pvals, p_adj, Fvals)
-
-end
-
-%% LD Result 3-1 -- diurnality analysis across social context using LME
-% Quantify whether the proportion of activity occurring during
-% the night phase differs across social contexts for both
-% locomotor activity and social motivation.
-
-% === Create LME table ===
-loc_tbl = getLmeTable(LD, {'Paired', 'Removal', 'Solitary'}, ...
-    {'locomotor_night', 'locomotor'}, 'Lighting', 'LD');
-dur_tbl = getLmeTable(LD, {'Paired', 'Removal', 'Solitary'}, ...
-    {'duration_night', 'duration'}, 'Lighting', 'LD');
-% === Rename Variables for Consistency ===
-loc_tbl = renamevars(loc_tbl, ...
-    {'locomotor_night','locomotor'}, ...
-    {'NightCount','TotalCount'});
-dur_tbl = renamevars(dur_tbl, ...
-    {'duration_night','duration'}, ...
-    {'NightCount','TotalCount'});
-loc_tbl.Prop = loc_tbl.NightCount ./ loc_tbl.TotalCount;
-dur_tbl.Prop = dur_tbl.NightCount ./ dur_tbl.TotalCount;
-% === LOGIT TRANSFORMATION for LOCOMOTOR ===
-% Boundary check
-fprintf('\n=== LOCOMOTOR PROP CHECK ===\n');
-disp([min(loc_tbl.Prop), max(loc_tbl.Prop)])
-fprintf('Exact 0 or 1 values: %d\n', ...
-    sum(loc_tbl.Prop == 0 | loc_tbl.Prop == 1));
-
-% Adjust proportions to avoid infinite logits
-p_adj = ...
-    (loc_tbl.NightCount + 0.5) ./ ...
-    (loc_tbl.TotalCount + 1);
-loc_tbl.logitProp = ...
-    log(p_adj ./ (1 - p_adj));
-
-% === CONSTRUCTING LMES ===
-loc_additive = fitlme(loc_tbl, ...
-            'logitProp ~ Context + Day_c + (1|Mouse)');
-loc_interaction = fitlme(loc_tbl, ...
-            'logitProp ~ Context*Day_c + (1|Mouse)');
-dur_additive = fitlme(dur_tbl, ...
-            'Prop ~ Context + Day_c + (1|Mouse)');
-dur_interaction = fitlme(dur_tbl, ...
-            'Prop ~ Context*Day_c + (1|Mouse)');
-% === COMPARE ADDITIVE VS. INTERACTIVE MODELS ===
-compare(loc_additive, loc_interaction)
-compare(dur_additive, dur_interaction)
-% === ANOVA TABLES & COEFFICIENTS === 
-anova(loc_interaction) % not significant
-anova(dur_additive)
-dur_additive.Coefficients
-
-% === PLANNED CONTRASTS FOR SOCIAL DURATION ===
-comparisons = {
-    'Paired vs Removal';
-    'Paired vs Solitary';
-    'Removal vs Solitary'
-};
-H = [
-        0  1  0  0;   % Paired vs Removal
-        0  0  1  0;   % Paired vs Solitary
-        0 -1  1  0    % Removal vs Solitary
-    ];
-[pvals, Fvals] = runContrasts(dur_additive, H);
-p_adj = holmBonferroni(pvals);
-table(comparisons, pvals, p_adj, Fvals)
-
-
-% === RESIDUAL DIAGNOSTICS + HOMOSCEDASTICITY CHECK ===
-% % Uncomment to check
-% r = residuals(dur_additive);
-% figure; histogram(r,30); title('Residual Distribution');
-% figure; qqplot(r); title('QQ Plot of Residuals');
-% f = fitted(dur_additive);
-% figure; scatter(f, r, 'filled'); xlabel('Fitted'); ylabel('Residuals');
-% title('Residuals vs Fitted'); refline(0,0);
-
-
-% === CORRELATION BETWEEN LOCOMOTOR AND SOCIAL ===
-loc_sub = loc_tbl(:, {'Mouse','Day', 'Context', 'Prop','TotalCount'});
-dur_sub = dur_tbl(:, {'Mouse','Day', 'Context', 'Prop','TotalCount'});
-% Rename variables before merge
-loc_sub.Properties.VariableNames{'Prop'} = 'loc_prop';
-dur_sub.Properties.VariableNames{'Prop'} = 'dur_prop';
-loc_sub.Properties.VariableNames{'TotalCount'} = 'loc_total';
-dur_sub.Properties.VariableNames{'TotalCount'} = 'dur_total';
-% Merge tables
-tbl_merged = innerjoin(loc_sub, dur_sub, 'Keys', {'Mouse','Context', 'Day'});
-
-% --- Correlation of Total Activity ---
-x_total = tbl_merged.dur_total; % social
-y_total = tbl_merged.loc_total; % locomotor
-% Pearson
-[rp_total, pp_total] = corr(x_total, y_total, 'Type','Pearson', 'Rows','complete')
-
-% --- Correlation of Diurnal Proportions ---
-x = tbl_merged.dur_prop;   % social
-y = tbl_merged.loc_prop;   % locomotor
-% Spearman
-[r_s, p_s] = corr(x, y, 'Type','Spearman', 'Rows','complete')
-
-% === SCATTER PLOT FOR SANITY CHECK ===
-% % Uncomment to check
-% figure(); scatter(x_total, y_total, 'filled');
-% xlabel('Social'); ylabel('Locomotor');
-% title('Total Activity Correlation'); lsline;
-%% LD Result 3-2 -- circadian phase analysis using cosinor fitting (UNCHECKED)
-
-% Cosinor fit for locomotor and individual social seeking of the paired
-% group
-% locomotor_out = run_cosinor(LD.Paired, 'loc_file');
+% Cosinor fit for locomotor and individual social seeking of Paired group
+locomotor_out = run_cosinor(LD.Paired, 'loc_file');
 socialseeking_out = run_cosinor(LD.Paired, 'soc_file');
 
 % --- 0. Convert to circular form ---
@@ -245,63 +197,53 @@ end
 real_diff = mean(pair_diff); % in circular form
 p_pair = mean(null_diff <= real_diff);
 
-%% LD vs. DD Interaction parameters using lme
+%% Result 3 (DD): Interaction parameters between LD and DD with t-test.
+[~, p, ~, tstat] = ttest2(LD.Interaction_means.duration, DD.Interaction_means.duration)
+[~, p, ~, tstat] = ttest2(LD.Interaction_means.entries, DD.Interaction_means.entries)
+%% Result 3 (DD): Waveform changes between behaviour and lighting with LME
+% Get tables
+hoursPerBin = 3;
+WR_LD_tbl = getTimebinLmeTable(LD.Paired, 'WR', 'LD', hoursPerBin); 
+SI_LD_tbl = getTimebinLmeTable(LD.Interaction, 'SI', 'LD', hoursPerBin);
 
-variable = 'count'; % count or duration
-LD_tbl = getLmeTable(LD, {'Interaction'}, variable, 'Lighting', 'LD');
-DD_tbl = getLmeTable(DD, {'Interaction'}, variable, 'Lighting', 'DD');
-full_tbl = [LD_tbl; DD_tbl];
-full_tbl.Lighting = categorical(full_tbl.Lighting);
+WR_DD_tbl = getTimebinLmeTable(DD.Paired, 'WR', 'DD', hoursPerBin); 
+SI_DD_tbl = getTimebinLmeTable(DD.Interaction, 'SI', 'DD', hoursPerBin);
 
-lme_additive = fitlme(full_tbl,'DV ~ Lighting + Day_c + (1|Mouse)');
-anova(lme_additive)
+LD_waveform_tbl = [WR_LD_tbl; SI_LD_tbl];
+DD_waveform_tbl = [WR_DD_tbl; SI_DD_tbl];
+Interaction_tbl = [SI_LD_tbl; SI_DD_tbl];
+WheelRunning_tbl = [WR_LD_tbl; WR_DD_tbl];
 
-%% LD vs. DD Context * Lighting (DONE)
-variable = 'duration'; % count or duration
 
-LD_tbl = getLmeTable(LD, {'Paired', 'Removal', 'Solitary'}, ...
-    variable, 'Lighting', 'LD');
-DD_tbl = getLmeTable(DD, {'Paired', 'Removal', 'Solitary'}, ...
-    variable, 'Lighting', 'DD');
-full_tbl = [LD_tbl; DD_tbl];
-full_tbl.Lighting = categorical(full_tbl.Lighting);
+zLD_behaviour = fitlme(LD_waveform_tbl, ...
+    'zActivity ~ Behaviour*TimeBin + (1|DyadID)');
+zDD_behaviour = fitlme(DD_waveform_tbl, ...
+    'zActivity ~ Behaviour*TimeBin + (1|DyadID)');
+zSI_Lighting = fitlme(Interaction_tbl, ...
+    'zActivity ~ Lighting*TimeBin + (1|DyadID)');
+zWR_Lighting = fitlme(WheelRunning_tbl, ...
+    'zActivity ~ Lighting*TimeBin + (1|DyadID)');
 
-lme_additive = fitlme(full_tbl,'DV ~ Lighting + Context + Day_c + (1|Mouse)');
-lme_interaction = fitlme(full_tbl,'DV ~ Lighting*Context + Day_c + (1|Mouse)');
-compare(lme_additive, lme_interaction)
-anova(lme_additive)
+ans_LD = anova(zLD_behaviour);
+ans_DD = anova(zDD_behaviour);
+ans_SI = anova(zSI_Lighting);
+ans_WR = anova(zWR_Lighting);
 
-% Simple contrasts between social context under DD
 comparisons = {
-    'Paired vs Removal   (DD)';
-    'Paired vs Solitary  (DD)';
-    'Removal vs Solitary (DD)'
+    'LD: SI vs WR';
+    'DD: SI vs WR';
+    'SI: LD vs DD';
+    'WR: LD vs DD'
 };
-H = [
-    0  1  0  0  0;   % Paired vs Removal (DD)
-    0  0  1  0  0;   % Paired vs Solitary (DD)
-    0 -1  1  0  0    % Removal vs Solitary (DD)
-];
-[pvals, Fvals] = runContrasts(lme_additive, H);
-p_adj = holmBonferroni(pvals);
-table(comparisons, pvals, p_adj, Fvals)
 
+ans_all = [ans_LD(4, :);
+    ans_DD(4, :);
+    ans_SI(4, :);
+    ans_WR(4, :)]; % extract interaction row
+ans_all.Term = comparisons;
+ans_all.p_adj = holmBonferroni(ans_all.pValue);
+disp(ans_all)
 
-%% Helper Functions
-function [pvals, Fvals] = runContrasts(lme, H)
-
-    nComp = size(H,1);
-
-    pvals = zeros(nComp,1);
-    Fvals = zeros(nComp,1);
-
-    for i = 1:nComp
-        [p,F] = coefTest(lme, H(i,:));
-        pvals(i) = p;
-        Fvals(i) = F;
-    end
-
-end
 function p_adj = holmBonferroni(pvals)
 % Performs Holm–Bonferroni correction for multiple comparisons.
 %
@@ -432,9 +374,10 @@ for v = 1:numel(variables)
 
 end
 
-Context = {};
-Mouse   = {};
+Social  = {};
+MouseID = {};
 Day     = [];
+Age     = [];
 
 %% =========================
 % Extract data
@@ -458,8 +401,8 @@ for c = 1:numel(contexts)
     for m = 1:numel(mouseNames)
 
         mouseName = mouseNames{m};
-
         mouseData = Data.(ctx).(mouseName);
+        mouseAge = mouseData.Age;
 
         %% Determine number of days
         firstVar = variables{1};
@@ -492,12 +435,15 @@ for c = 1:numel(contexts)
         end
 
         %% Add metadata
-        Context = [Context;
+        Social = [Social;
             repmat({lower(ctx)}, nDays, 1)];
 
-        Mouse = [Mouse;
+        MouseID = [MouseID;
             repmat({strcat(opt.Lighting, mouseName)}, ...
             nDays, 1)];
+
+        Age = [Age;
+            repmat(mouseAge, nDays, 1)];
 
         Day = [Day;
             (1:nDays)'];
@@ -532,39 +478,28 @@ else
 end
 
 %% Add metadata columns
-tbl.Context = Context;
-tbl.Mouse   = Mouse;
+tbl.Social  = Social;
+tbl.MouseID = MouseID;
 tbl.Day     = Day;
-
-%% =========================
-% Mouse identity replacements
-% ==========================
+tbl.Age     = Age;
+%% Mouse identity replacements
 
 switch opt.Lighting
 
     case 'LD'
 
-        tbl.Mouse = replace(tbl.Mouse, ...
+        tbl.MouseID = replace(tbl.MouseID, ...
             {'LDr1','LDr2','LDr3','LDr4'}, ...
             {'LDp1r','LDp2r','LDp3r','LDp4r'});
 
     case 'DD'
 
-        tbl.Mouse = replace(tbl.Mouse, ...
+        tbl.MouseID = replace(tbl.MouseID, ...
             {'DDr1','DDr2','DDr3','DDr4'}, ...
             {'DDp1l','DDp2r','DDp3r','DDp4l'});
 
 end
 
-%% =========================
-% Convert grouping variables to categorical
-% ==========================
-
-tbl.Context = categorical(tbl.Context);
-tbl.Mouse   = categorical(tbl.Mouse);
-
-%% Center day variable
-tbl.Day_c = tbl.Day - mean(tbl.Day);
 
 %% Add lighting condition column
 tbl.Lighting = repmat( ...
@@ -573,6 +508,16 @@ tbl.Lighting = repmat( ...
 
 %% Remove rows containing NaNs
 tbl = rmmissing(tbl);
+
+%% Variable Tranform
+
+% Convert grouping variables to categorical
+tbl.Lighting = categorical(tbl.Lighting);
+tbl.Social = categorical(tbl.Social);
+tbl.MouseID   = categorical(tbl.MouseID);
+
+% Centering day (1-7)
+tbl.Day_c = tbl.Day - mean(1:1:7);
 
 end
 function out = run_cosinor(data, variable)
@@ -656,3 +601,95 @@ out.mean_y = all_mean_y;
 out.std_y = all_std_y;
 end
 
+function tbl = getTimebinLmeTable(data, behaviour, lighting, BinSize)
+% Converts behavioural data structures into a long-format table
+%
+% INPUTS:
+%   Data
+%       Master data structure organized as:
+%           (Lighting).(social context).(mouse)
+%       Only take (Lighting).Paired for WR & (Lighting).Interaction for SI
+%
+%   behaviour
+%       'WR' - wheel-running.
+%       'SI' - social interaction
+%
+%   lighting
+%       string 'LD' or 'DD'
+%
+% OUTPUT:
+%   tbl
+%       Long-format table suitable for fitlme().
+
+    fieldNames = fieldnames(data);
+    % define the file name to call on
+    sumDataforSI = false;
+    scaleBinforDDSI = false;
+    switch behaviour
+        case 'WR'
+            filename = 'loc_file';
+            dyadNum = [1 1 2 2 3 3 4 4];
+        case 'SI'
+            filename = 'soc_file';
+            sumDataforSI = true;
+            dyadNum = [1 2 3 4];
+            if strcmp(lighting,'DD')
+                % scale to 360 full circadian seconds per bin
+                scaleBinforDDSI = true;
+            end
+    end
+    
+    tbl = table();
+    for i = 1:numel(fieldNames)
+        file = readtable(data.(fieldNames{i}).(filename));
+        if sumDataforSI
+            if scaleBinforDDSI
+                scaleBin = 24 / mean(data.(fieldNames{i}).period);
+            else
+                scaleBin = 1;
+            end
+            file.data = scaleBin*(file.both_mid + file.both_midsep);
+        end
+        file = groupsummary(file,...
+                           {'CT','bin'},...
+                           'mean',...
+                           'data'); % average across days
+        % Circadian time
+        t = file.CT + (file.bin-1)/10;
+        ct = mod(t,24);
+    
+        
+        % Add 6-min bins into 1h bins
+        edges = 0:BinSize:24;
+        binID = discretize(ct,edges);
+        hourlyActivity = accumarray(binID,...
+                                  file.mean_data,...
+                                  [24/BinSize 1],...
+                                  @sum,...
+                                  NaN);
+    
+        tmp = table();
+        tmp.DyadID    = repmat(categorical("Dyad"+dyadNum(i)),24/BinSize,1);
+        tmp.Lighting  = repmat(categorical(string(lighting)),24/BinSize,1);
+        tmp.Behaviour = repmat(categorical(string(behaviour)),24/BinSize,1);
+        tmp.TimeBin = categorical(1:BinSize:24, 1:BinSize:24, ...
+            compose("CT%d",0:BinSize:23))';
+        tmp.Activity = hourlyActivity;
+        tmp.zActivity = zscore(tmp.Activity);
+
+        % append to lme table
+        tbl = [tbl; tmp];
+    end
+
+    if strcmp(behaviour,'WR')
+        tbl = groupsummary(tbl,...
+                           {'DyadID','Lighting','Behaviour','TimeBin'},...
+                           'mean',...
+                           {'Activity', 'zActivity'});
+    
+        tbl.GroupCount = [];
+        tbl.Properties.VariableNames{'mean_Activity'} = 'Activity';
+        tbl.Properties.VariableNames{'mean_zActivity'} = 'zActivity';
+    
+    end
+end
